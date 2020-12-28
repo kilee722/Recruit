@@ -1,0 +1,514 @@
+---
+title: "recruit_eda"
+author: "Ki Min Lee"
+date: "12/27/2020"
+output: html_document
+---
+
+```{r}
+library(arrow)
+library(ggmap)
+library(lubridate)
+library(scales)
+library(skimr)
+library(tidyverse)
+library(dplyr)
+```
+
+```{r}
+
+air_visit_data <-
+  read_csv(
+    "C:/Portfolio_project/Recruit/raw/air_visit_data.csv",
+    col_types = cols(
+      air_store_id = col_character(),
+      visit_date = col_date(format = "%Y-%m-%d"),
+      visitors = col_integer()
+    )
+  )
+air_visit_data
+```
+
+```{r}
+date_info <- read_csv(
+  "C:/Portfolio_project/Recruit/raw/date_info.csv",
+  col_types = cols(
+    .default = col_skip(),
+    calendar_date = col_date(format = "%Y-%m-%d"),
+    day_of_week = col_factor(
+      levels = c(
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday"
+      ),
+      ordered = TRUE
+    ),
+    holiday_flg = col_logical()
+  )
+)
+date_info
+```
+
+```{r}
+air_store_info <- read_csv(
+  "C:/Portfolio_project/Recruit/raw/air_store_info.csv",
+  col_types = cols(
+    air_store_id = col_character(),
+    air_genre_name = col_factor(),
+    air_area_name = col_character(),
+    latitude = col_double(),
+    longitude = col_double()
+  )
+) %>%
+  mutate(air_area_name = air_area_name %>%
+           str_replace(" ", "|") %>%
+           str_replace(" ", "|")) %>%
+  separate(
+    air_area_name,
+    into = c("prefecture", "municipality", "district"),
+    sep = "\\|"
+  ) %>%
+  mutate(across(prefecture:district, as_factor))
+air_store_info
+```
+
+
+
+```{r}
+train <- air_visit_data %>%
+  left_join(date_info,
+            by = c("visit_date" = "calendar_date")) %>%
+  mutate(
+    day = day(visit_date),
+    day_of_month = mday(visit_date),
+    month = month(visit_date),
+    year = year(visit_date) %>% as_factor(),
+    quarter = quarter(visit_date) %>% as_factor()
+  ) %>%
+  left_join(air_store_info,
+            by = "air_store_id")
+train
+```
+
+```{r}
+skim(train)
+```
+
+```{r}
+train %>%
+  group_by(visit_date) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(x = visit_date, y = visitors, color = "count")) +
+  geom_point(size = 1) +
+  geom_line(linetype = "dotted") +
+  scale_y_continuous(labels = label_number_si()) +
+  scale_x_date(labels = label_date_short()) +
+  theme_minimal() +
+  labs(title = "Daily Visitors", x = "Date", y = "Visitors") +
+  theme(legend.position = "none")
+ggsave("visitors_per_day.png", width = 7, height = 4)
+```
+
+```{r}
+train %>%
+  filter(year == 2016) %>%
+  group_by(visit_date, prefecture) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(x = visit_date, y = visitors, color = prefecture)) +
+  geom_point(size = 1) +
+  geom_line(linetype = "dotted") +
+  scale_y_continuous(labels = label_number_si()) +
+  scale_x_date(labels = label_date_short()) +
+  theme_minimal() +
+  labs(
+    title = "Daily Visitors by Prefecture",
+    x = "Date",
+    y = "Visitors",
+    color = "Prefecture"
+  )
+ggsave("visitors_per_day_by_prefecture.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+
+train %>%
+  group_by(quarter, year) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = quarter,
+    y = visitors,
+    group = year,
+    color = year
+  )) +
+  geom_line(linetype = "dotted") +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = label_number_si()) +
+  theme_minimal() +
+  labs(
+    title = "Vistors per Quarter",
+    color = "Year",
+    x = "Quarter",
+    y = "Visitors"
+  )
+ggsave("quarterly_visitors.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+train %>%
+  filter(year == 2016) %>%
+  group_by(quarter, prefecture) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = quarter,
+    y = visitors,
+    group = prefecture,
+    color = prefecture
+  )) +
+  geom_line(linetype = "dotted") +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = label_number_si()) +
+  theme_minimal() +
+  labs(
+    title = "Vistors per Quarter by Prefecture",
+    color = "Prefecture",
+    x = "Quarter",
+    y = "Visitors"
+  )
+ggsave("quarterly_visitors_by_prefecture.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+
+train %>%
+  group_by(month, year) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = month,
+    y = visitors,
+    group = year,
+    color = as_factor(year)
+  )) +
+  geom_line(linetype = "dotted") +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = label_number_si()) +
+  theme_minimal() +
+  xlim(month.abb) +
+  labs(
+    title = "Visitors per Month",
+    x = "Month",
+    y = "Visitors",
+    color = "Year"
+  )
+ggsave("monthly_visitors.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+
+train %>%
+  filter(year == 2016) %>%
+  group_by(month, prefecture) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = month,
+    y = visitors,
+    group = prefecture,
+    color = prefecture
+  )) +
+  geom_line(linetype = "dotted") +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = label_number_si()) +
+  theme_minimal() +
+  xlim(month.abb) +
+  labs(
+    title = "Visitors per Month by Prefecture",
+    x = "Month",
+    y = "Visitors",
+    color = "Prefecture"
+  )
+ggsave("monthly_visitors_by_prefecture.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+train %>%
+  group_by(day_of_week, year) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = day_of_week,
+    y = visitors,
+    color = year,
+    group = year
+  )) +
+  geom_line(linetype = "dotted") +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = label_number_si()) +
+  theme_minimal() +
+  labs(
+    title = "Visitors per Weekday",
+    x = "Day of Week",
+    y = "Visitors",
+    color = "Year"
+  )
+ggsave("weekdaily_visitors.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+train %>%
+  filter(year == 2016) %>%
+  group_by(day_of_week, prefecture) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = day_of_week,
+    y = visitors,
+    group = prefecture,
+    color = prefecture
+  )) +
+  geom_line(linetype = "dotted") +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = label_number_si()) +
+  theme_minimal() +
+  labs(
+    title = "Visitors per Weekday by Prefecture",
+    x = "Day of Week",
+    y = "Visitors",
+    color = "Prefecture"
+  )
+ggsave("weekdaily_visitors_by_prefecture.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+
+train %>%
+  group_by(day_of_month, year) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = day_of_month,
+    y = visitors,
+    group = year,
+    color = year
+  )) +
+  geom_line(linetype = "dotted") +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = label_number_si()) +
+  theme_minimal() +
+  xlim(as.character(1:31)) +
+  labs(
+    title = "Visitors per Monthday",
+    x = "Day of Month",
+    y = "Visitors",
+    color = "Year"
+  )
+ggsave("monthdaily_visitors.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+
+train %>%
+  filter(year == 2016) %>%
+  group_by(day_of_month, prefecture) %>%
+  summarize(visitors = sum(visitors)) %>%
+  ungroup() %>%
+  ggplot(aes(
+    x = day_of_month,
+    y = visitors,
+    group = prefecture,
+    color = prefecture
+  )) +
+  geom_line(linetype = "dotted") +
+  geom_point(size = 1) +
+  scale_y_continuous(labels = label_number_si()) +
+  theme_minimal() +
+  xlim(as.character(1:31)) +
+  labs(
+    title = "Visitors per Monthday by Prefecture",
+    x = "Day of Month",
+    y = "Visitors",
+    color = "Prefecture"
+  )
+ggsave("monthdaily_visitors_by_prefecture.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+test <- read_csv(
+  "C:/Portfolio_project/Recruit/raw/sample_submission.csv",
+  col_types = cols(.default = col_skip(), id = col_character())
+) %>%
+  separate(id,
+           into = c("air_store_id", "visit_date"),
+           sep = "(_)(?=[^_]+$)") %>%
+  mutate(visit_date = as_date(visit_date, format = "%Y-%m-%d")) %>%
+  left_join(air_store_info, by = "air_store_id")
+test
+```
+
+```{r}
+train %>%
+  mutate(type = "Train") %>%
+  bind_rows(test %>% mutate(type = "Test")) %>%
+  ggplot(aes(x = prefecture, fill = type)) +
+  geom_bar() +
+  coord_flip() +
+  theme_minimal() +
+  scale_y_continuous(labels = label_number_si()) +
+  labs(
+    title = "Count per Prefecture by Dataset",
+    x = "Prefecture",
+    y = "Count",
+    color = "Dataset"
+  )
+ggsave("count_per_prefecture_by_dataset.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+train %>%
+  distinct(air_store_id, longitude, latitude, prefecture) %>%
+  ggplot(aes(x = longitude, y = latitude, color = prefecture)) +
+  geom_point() +
+  theme_minimal() +
+  geom_point(size = 0.1) +
+  labs(
+    title = "Restaurants by Prefecture",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Prefecture"
+  )
+ggsave("restaurants_by_prefecture.png",
+       width = 7,
+       height = 4)
+```
+
+```{r}
+p <- qmplot(longitude,
+            latitude,
+            data = train,
+            zoom = 6,
+            color = prefecture) +
+  theme_minimal() +
+  labs(
+    title = "Restaurants by Prefecture",
+    color = "Prefecture",
+    x = "Longitude",
+    y = "Latitude"
+  )
+ggsave(
+  "restaurants_by_prefecture_map.png",
+  plot = p,
+  width = 7,
+  height = 4
+)
+```
+
+```{r}
+train_air_store_ids <- train %>%
+  distinct(air_store_id) %>%
+  pull()
+```
+
+```{r}
+train %>%
+  ggplot(aes(x = holiday_flg, y = visitors)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 100))
+```
+
+```{r}
+train %>%
+  group_by(day_of_week, holiday_flg) %>%
+  summarize(as_tibble(t(quantile(visitors)))) %>%
+  ggplot(aes(
+    x = day_of_week,
+    y = `50%`,
+    color = holiday_flg,
+    group = holiday_flg
+  )) +
+  geom_point() +
+  geom_ribbon(aes(ymin = `25%`, ymax = `75%`),
+              fill = "grey80",
+              color = NA) +
+  geom_line()
+```
+
+```{r}
+train %>%
+  select(visit_date) %>%
+  slice(1:1000) %>%
+  mutate(as_tibble(cyclic_encoding(
+    visit_date, periods = c("week", "month", "year")
+  ))) %>%
+  ggplot(aes(x = cos.year, y = sin.year)) +
+  geom_point()
+```
+
+```{r}
+
+recruit_data <- read_csv(
+  "C:/Portfolio_project/Recruit/raw/recruit_data.csv",
+  col_types = cols(
+    .default = col_skip(),
+    air_store_id = col_factor(),
+    visitors = col_integer(),
+    holiday_flg = col_logical(),
+    air_genre_name = col_factor(),
+    latitude = col_double(),
+    longitude = col_double(),
+    Prefecture = col_factor(),
+    Municipality = col_factor(),
+    District = col_factor(),
+    x_dow = col_double(),
+    y_dow = col_double(),
+    x_mon = col_double(),
+    y_mon = col_double()
+  )
+)
+```
+
+```{r}
+library(ranger)
+library(vip)
+```
+
+```{r}
+model <-
+  ranger(
+    visitors ~ .,
+    recruit_data,
+    num.trees = 1000,
+    importance = "impurity",
+    seed = 1
+  )
+
+vip(model)
+```
+
